@@ -29,7 +29,6 @@
           text-decoration: none;
       }
 
-
       .splash-container {
           background-image: url('img/bg.jpg');
           z-index: 1;
@@ -68,7 +67,6 @@
           padding: 1em 1em 3em;
       }
 
-
       .footer {
           background: #111;
           position: fixed;
@@ -76,7 +74,6 @@
           width: 100%;
           text-align: center;
       }
-
 
       .sets a {
         font-size: 250%;
@@ -131,27 +128,34 @@
       var set_data = [];
       var user_data = [];
 
-      let ud = localStorage.getItem("user_data");
-
-      if (ud != null) {
-        Papa.parse(ud, {
-          complete: function(results) {
-            user_data = results.data;
-          }
-        });
+      function loadUserData() {
+        let ud = localStorage.getItem("user_data");
+        if (ud != null) {
+          Papa.parse(ud, {
+            complete: function(results) {
+              user_data = results.data;
+              m.redraw()
+            }
+          });
+        }
       }
 
-
-
-      document.addEventListener("DOMContentLoaded", function () {
-
-        var count = 0 // added a variable
-
+      function onDOMReady() {
+        loadUserData();
         var index = {
           view: function(vnode) {
             return [
               m("h1", "Upload Manabox .csv"),
-              m("input", {type: "file", id: "csv", name: "csv", accept: "text/csv"}),
+              m("input", {type: "file", id: "csv", name: "csv", accept: "text/csv", onchange: function() {
+                for (const file of event.target.files) {
+                  const reader = new FileReader();
+                  reader.onload = function(e) {
+                    localStorage.setItem("user_data", reader.result);
+                    loadUserData();
+                  };
+                  reader.readAsText(file);
+                }
+              }}),
               m("h1", "Search"),
               m("input", {type: "text", onkeyup: function(e) { if(e.code == "Enter") m.route.set("/search/:term", {term: this.value}) }}),
               m("h1", "Browse Sets"),
@@ -172,7 +176,6 @@
                     ])
                   })
                 ]),
-                m("button", {onclick: function() {count++}}, count + " clicks")
             ]}
         }
 
@@ -191,7 +194,6 @@
                     ])
                   })
               ]),
-              m("button", {onclick: function() {count++}}, count + " clicks")
             ]
           }
         }
@@ -211,7 +213,6 @@
                     ])
                   })
               ]),
-              m("button", {onclick: function() {count++}}, count + " clicks")
             ]
           }
         }
@@ -220,31 +221,19 @@
           "/": index,
           "/set/:set": browse_set,
           "/search/:term": search_result
-        })
-
-
-
-        fetch("https://mtgjson.com/api/v5/csv/sets.csv")
-          .then(response => response.text())
-          .then(data => {
-            Papa.parse(data, {
-              complete: function(results) {
-                set_data = results.data;
-              }
-            });
-          });
-          document.getElementById('csv').addEventListener('change', function(event) {
-            const files = event.target.files;
-
-            for (const file of files) {
-                const reader = new FileReader();
-                reader.onload = function(e) {
-                  localStorage.setItem("user_data", reader.result);
-                };
-                reader.readAsText(file);
-            }
         });
-      });
+
+        Papa.parse("https://mtgjson.com/api/v5/csv/sets.csv", {
+          download: true,
+          complete: function(results) {
+            set_data = results.data;
+            m.redraw();
+          }
+        });
+
+      }
+
+      document.addEventListener("DOMContentLoaded", onDOMReady);
     </script>
   </head>
   <body>
