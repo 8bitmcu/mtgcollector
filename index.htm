@@ -1,0 +1,257 @@
+<html>
+  <head>
+    <script src="https://unpkg.com/mithril/mithril.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/PapaParse/5.3.0/papaparse.min.js"></script>
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/purecss@3.0.0/build/pure-min.css" integrity="sha384-X38yfunGUhNzHpBaEBsWLO+A0HDYOQi8ufWDkZ0k9e0eXz/tH3II7uKZ9msv++Ls" crossorigin="anonymous">
+    <link href="https://cdn.jsdelivr.net/npm/keyrune@latest/css/keyrune.css" rel="stylesheet" type="text/css" />
+    <link href=" https://cdn.jsdelivr.net/npm/@saeris/typeface-beleren-bold@1.0.1/index.min.css " rel="stylesheet">
+    <title>MTGCollector</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <style>
+      body {
+          line-height: 1.7em;
+          color: #7f8c8d;
+          font-size: 13px;
+      }
+
+      h1,
+      h2,
+      h3,
+      h4,
+      h5,
+      h6,
+      label {
+          color: #34495e;
+      }
+
+      a {
+          color: #1f8dd6;
+          text-decoration: none;
+      }
+
+
+      .splash-container {
+          background-image: url('img/bg.jpg');
+          z-index: 1;
+          overflow: hidden;
+          width: 100%;
+          height: 48%;
+          top: 0;
+          left: 0;
+          position: fixed !important;
+      }
+
+      .splash-container h1 {
+          font-size: 20px;
+          font-weight: bold;
+          color: white;
+          padding: 1em 1.6em;
+          font-weight: 100;
+          border-radius: 5px;
+          line-height: 1em;
+          text-align: center;
+          font-family: "Beleren Bold";
+          text-shadow: 0px 0px 10px black;
+      }
+
+      .content-wrapper {
+          position: absolute;
+          top: 37%;
+          width: 100%;
+          min-height: 12%;
+          z-index: 2;
+          background: white;
+
+      }
+
+      #content {
+          padding: 1em 1em 3em;
+      }
+
+
+      .footer {
+          background: #111;
+          position: fixed;
+          bottom: 0;
+          width: 100%;
+          text-align: center;
+      }
+
+
+      .sets a {
+        font-size: 250%;
+        margin: 1em;
+        display: block;
+      }
+
+      .ss {
+        margin-top: -8px;
+        width: 64px;
+      }
+
+      .card {
+        margin: 5px;
+        width: 250px;
+        height: 350px;
+        display: inline-block;
+        position: relative;
+        background-size: contain;
+        background-repeat: no-repeat;
+      }
+      .card .price {
+        position: absolute;
+        font-size: 2em;
+        color: white;
+        text-shadow: 2px 2px 2px black;
+        left: 96px;
+        bottom: 0px;
+      }
+      .card .qty {
+        position: absolute;
+        font-size: 1.6em;
+        color: white;
+        text-shadow: 2px 2px 2px black;
+        left: 100px;
+        top: 0px;
+      }
+
+      @media (min-width: 48em) {
+          body {
+              font-size: 16px;
+          }
+      }
+
+      @media (min-width: 78em) {
+          .splash-container h1 {
+              font-size: 7em;
+          }
+      }
+    </style>
+    <script>
+      var set_data = [];
+      var user_data = [];
+
+      Papa.parse(localStorage.getItem("user_data"), {
+        complete: function(results) {
+          user_data = results.data;
+        }
+      });
+
+
+
+      document.addEventListener("DOMContentLoaded", function () {
+
+        var count = 0 // added a variable
+
+        var index = {
+          view: function(vnode) {
+            return [
+              m("h1", "Upload Manabox .csv"),
+              m("input", {type: "file", id: "csv", name: "csv", accept: "text/csv"}),
+              m("h1", "Search"),
+              m("input", {type: "text", onkeyup: function(e) { if(e.code == "Enter") m.route.set("/search/:term", {term: this.value}) }}),
+              m("h1", "Browse Sets"),
+              m("div", {class : "sets"}, [
+                set_data
+                  // filter out first item which is csv column names
+                  .filter((item, index, arr) => arr.indexOf(item) != 0)
+                  // filter out editions that we don't have
+                  .filter(item => user_data.map(x => x[1]).indexOf(item[3]) != -1)
+                  // sort by release date
+                  .sort(function(a, b) {
+                    return new Date(a[17]).getTime() - new Date(b[17]).getTime();
+                  })
+                  .map(function(item) {
+                    return m(m.route.Link, {href: "/set/" + item[3]}, [
+                      m("i", {class: "ss ss-" + item[3]}),
+                      m("span", item[15])
+                    ])
+                  })
+                ]),
+                m("button", {onclick: function() {count++}}, count + " clicks")
+            ]}
+        }
+
+        var browse_set = {
+          view: function(vnode) {
+            return [
+              m("h1", "Browsing " + set_data.filter(x => x[3] == vnode.attrs.set)[0][15]),
+              m("div", {class: "cards"}, [
+                user_data
+                  .filter(item => item[1] == vnode.attrs.set)
+                  .map(function(item) {
+                    let img = "https://cards.scryfall.io/large/front/" + item[8][0] + "/" + item[8][1] + "/" + item[8] + ".jpg";
+                    return m("div", {class: "card", style: "background-image: url('" + img + "')"}, [
+                      m("span", {class: "price"}, item[9]),
+                      m("span", {class: "qty"}, item[6] + "x")
+                    ])
+                  })
+              ]),
+              m("button", {onclick: function() {count++}}, count + " clicks")
+            ]
+          }
+        }
+
+        var search_result = {
+          view: function(vnode) {
+            return [
+              m("h1", "Search Result for " + vnode.attrs.term),
+              m("div", {class: "cards"}, [
+                user_data
+                  .filter(item => item[0].toLowerCase().indexOf(vnode.attrs.term.toLowerCase()) > -1)
+                  .map(function(item) {
+                    let img = "https://cards.scryfall.io/large/front/" + item[8][0] + "/" + item[8][1] + "/" + item[8] + ".jpg";
+                    return m("div", {class: "card", style: "background-image: url('" + img + "')"}, [
+                      m("span", {class: "price"}, item[9]),
+                      m("span", {class: "qty"}, item[6] + "x")
+                    ])
+                  })
+              ]),
+              m("button", {onclick: function() {count++}}, count + " clicks")
+            ]
+          }
+        }
+
+        m.route(document.getElementById("content"), "/", {
+          "/": index,
+          "/set/:set": browse_set,
+          "/search/:term": search_result
+        })
+
+
+
+        fetch("https://mtgjson.com/api/v5/csv/sets.csv")
+          .then(response => response.text())
+          .then(data => {
+            Papa.parse(data, {
+              complete: function(results) {
+                set_data = results.data;
+              }
+            });
+          });
+          document.getElementById('csv').addEventListener('change', function(event) {
+            const files = event.target.files;
+
+            for (const file of files) {
+                const reader = new FileReader();
+                reader.onload = function(e) {
+                  localStorage.setItem("user_data", reader.result);
+                };
+                reader.readAsText(file);
+            }
+        });
+      });
+    </script>
+  </head>
+  <body>
+    <div class="splash-container">
+      <h1>MTGCollector</h1>
+    </div>
+    <div class="content-wrapper">
+        <div id="content">
+
+        </div>
+        <div class="footer"> (C) 2025 8bitmcu</div>
+    </div>
+  </body>
+</html>
