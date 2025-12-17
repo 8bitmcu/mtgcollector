@@ -30,7 +30,7 @@
       }
 
       .splash-container {
-          background-image: url('img/bg.jpg');
+          background: linear-gradient(90deg, #00d2ff 0%, #3a47d5 100%);
           z-index: 1;
           overflow: hidden;
           width: 100%;
@@ -127,21 +127,68 @@
     <script>
       var set_data = [];
       var user_data = [];
+      var card_sum = 0;
+      var unique_editions = 0;
+      var unique_cards = 0;
+      var rares = 0;
+      var uncommons = 0;
+      var commons = 0;
 
       function loadUserData() {
         let ud = localStorage.getItem("user_data");
-        if (ud != null) {
-          Papa.parse(ud, {
-            complete: function(results) {
-              user_data = results.data;
-              m.redraw()
-            }
-          });
+        if (ud == null) {
+          return;
         }
+        Papa.parse(ud, {
+          complete: function(results) {
+            user_data = results.data;
+
+            user_data
+              // filter out first item which is csv column names
+              .filter((item, index, arr) => arr.indexOf(item) != 0)
+              // sum all quanitity column values
+              .map(x => card_sum += parseInt(x[6]));
+
+            user_data
+              // filter for rarity
+              .filter(item => item[5] == "rare")
+              // sum all quanitity column values
+              .map(x => rares += parseInt(x[6]));
+
+            user_data
+              // filter for rarity
+              .filter(item => item[5] == "uncommon")
+              // sum all quanitity column values
+              .map(x => uncommons += parseInt(x[6]));
+
+            user_data
+              // filter for rarity
+              .filter(item => item[5] == "common")
+              // sum all quanitity column values
+              .map(x => commons += parseInt(x[6]));
+
+            unique_editions = set_data
+              // filter out first item which is csv column names
+              .filter((item, index, arr) => arr.indexOf(item) != 0)
+              // filter out editions that we don't have
+              .filter(item => user_data.map(x => x[1]).indexOf(item[3]) != -1)
+              .length;
+
+            unique_cards = [...new Set(user_data.map(x => x[0]))].length;
+            m.redraw()
+          }
+        });
+      }
+
+      function viewCard(item) {
+        let img = "https://cards.scryfall.io/large/front/" + item[8][0] + "/" + item[8][1] + "/" + item[8] + ".jpg";
+        return m("div", {class: "card", style: "background-image: url('" + img + "')"}, [
+          m("span", {class: "price"}, item[9]),
+          m("span", {class: "qty"}, item[6] + "x")
+        ]);
       }
 
       function onDOMReady() {
-        loadUserData();
         var index = {
           view: function(vnode) {
             return [
@@ -156,26 +203,37 @@
                   reader.readAsText(file);
                 }
               }}),
-              m("h1", "Search"),
-              m("input", {type: "text", onkeyup: function(e) { if(e.code == "Enter") m.route.set("/search/:term", {term: this.value}) }}),
-              m("h1", "Browse Sets"),
-              m("div", {class : "sets"}, [
-                set_data
-                  // filter out first item which is csv column names
-                  .filter((item, index, arr) => arr.indexOf(item) != 0)
-                  // filter out editions that we don't have
-                  .filter(item => user_data.map(x => x[1]).indexOf(item[3]) != -1)
-                  // sort by release date
-                  .sort(function(a, b) {
-                    return new Date(a[17]).getTime() - new Date(b[17]).getTime();
-                  })
-                  .map(function(item) {
-                    return m(m.route.Link, {href: "/set/" + item[3]}, [
-                      m("i", {class: "ss ss-" + item[3]}),
-                      m("span", item[15])
-                    ])
-                  })
+              m("div", {style: {display: user_data.length > 0 ? "" : "none"}}, [
+                m("h1", "Stats"),
+                m("ul", [
+                  m("li", card_sum + " cards loaded"),
+                  m("li", unique_cards + " unique cards"),
+                  m("li", unique_editions + " unique editions"),
+                  m("li", rares + " rares"),
+                  m("li", uncommons + " uncommons"),
+                  m("li", commons + " commons")
                 ]),
+                m("h1", "Search"),
+                m("input", {type: "text", onkeyup: function(e) { if(e.code == "Enter") m.route.set("/search/:term", {term: this.value}) }}),
+                m("h1", "Browse Sets"),
+                m("div", {class : "sets"}, [
+                  set_data
+                    // filter out first item which is csv column names
+                    .filter((item, index, arr) => arr.indexOf(item) != 0)
+                    // filter out editions that we don't have
+                    .filter(item => user_data.map(x => x[1]).indexOf(item[3]) != -1)
+                    // sort by release date
+                    .sort(function(a, b) {
+                      return new Date(a[17]).getTime() - new Date(b[17]).getTime();
+                    })
+                    .map(function(item) {
+                      return m(m.route.Link, {href: "/set/" + item[3]}, [
+                        m("i", {class: "ss ss-" + item[3]}),
+                        m("span", item[15])
+                      ])
+                    })
+                  ]),
+              ])
             ]}
         }
 
@@ -186,13 +244,7 @@
               m("div", {class: "cards"}, [
                 user_data
                   .filter(item => item[1] == vnode.attrs.set)
-                  .map(function(item) {
-                    let img = "https://cards.scryfall.io/large/front/" + item[8][0] + "/" + item[8][1] + "/" + item[8] + ".jpg";
-                    return m("div", {class: "card", style: "background-image: url('" + img + "')"}, [
-                      m("span", {class: "price"}, item[9]),
-                      m("span", {class: "qty"}, item[6] + "x")
-                    ])
-                  })
+                  .map(viewCard)
               ]),
             ]
           }
@@ -205,13 +257,7 @@
               m("div", {class: "cards"}, [
                 user_data
                   .filter(item => item[0].toLowerCase().indexOf(vnode.attrs.term.toLowerCase()) > -1)
-                  .map(function(item) {
-                    let img = "https://cards.scryfall.io/large/front/" + item[8][0] + "/" + item[8][1] + "/" + item[8] + ".jpg";
-                    return m("div", {class: "card", style: "background-image: url('" + img + "')"}, [
-                      m("span", {class: "price"}, item[9]),
-                      m("span", {class: "qty"}, item[6] + "x")
-                    ])
-                  })
+                  .map(viewCard)
               ]),
             ]
           }
@@ -227,7 +273,7 @@
           download: true,
           complete: function(results) {
             set_data = results.data;
-            m.redraw();
+            loadUserData();
           }
         });
 
