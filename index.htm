@@ -152,6 +152,12 @@
       .card .strong {
         color: black;
       }
+      .pagination {
+        margin: 1em
+      }
+      .pagination a {
+        margin-right: 0.6em;
+      }
 
 
       .stats {
@@ -194,7 +200,8 @@
         set_sort_order: "Ascending",
         set_sort_by: "Release",
         cards_sort_by: "Name",
-        cards_sort_order: "Ascending"
+        cards_sort_order: "Ascending",
+        items_per_page: 25
       }
 
       var setOrig = m.route.set;
@@ -217,7 +224,7 @@
           m("div", {class: "info"}, [
             m("span", {class: "name"}, item[0]),
             m("span", "Unit Price: ", [
-              m("span", {class: "strong"}, "$" + parseFloat(item[9]).toFixed(2))
+              m("span", {class: "strong"}, item[9] == '' ? '' : '$' + parseFloat(item[9]).toFixed(2))
             ]),
             m("span", "Quantity: ", [
               m("span", {class: "strong"}, item[6])
@@ -261,7 +268,26 @@
               m("option", {selected: model.cards_sort_order == "Ascending"}, "Ascending"),
               m("option", {selected: model.cards_sort_order == "Descending"}, "Descending")
             ])
+          ]),
+          m("div", {class: "control-group"}, [
+            m("label", {for: "items-per-page"}, "Items per page: "),
+            m("select", {id: "items-per-page", onchange: function(e) {
+              model.items_per_page = parseInt(e.target.value);
+            }}, [
+              m("option", {selected: model.items_per_page == 10}, "10"),
+              m("option", {selected: model.items_per_page == 25}, "25"),
+              m("option", {selected: model.items_per_page == 100}, "100")
+            ])
           ])
+        ])
+      }
+
+      function pagination(vnode, prefix) {
+        return m("div", {class: "pagination"}, [
+          m("label", "Page: "),
+          m(m.route.Link, {href: "/"}, "Home"),
+          m(m.route.Link, {href: prefix + "/page/" + (parseInt(vnode.attrs.page)-1), disabled: vnode.attrs.page == 1}, "Previous"),
+          m(m.route.Link, {href: prefix + "/page/" + (parseInt(vnode.attrs.page)+1)}, "Next")
         ])
       }
 
@@ -296,7 +322,10 @@
                 ])
               ]),
               m("h1", "Search"),
-              m("input", {type: "text", onkeyup: function(e) { if(e.code == "Enter") m.route.set("/search/:term", {term: this.value}) }}),
+              m("input", {type: "text", onkeyup: function(e) { if(e.code == "Enter") m.route.set("/search/:term/page/1", {term: this.value}) }}),
+              m("h1", [
+                m(m.route.Link, {href: "/all/page/1"}, "Browse All Cards")
+              ]),
               m("h1", "Browse Sets"),
               m("fieldset", [
                 m("div", {class: "control-group"}, [
@@ -339,7 +368,7 @@
                     return m("div", {class: "set"}, [
                       m("i", {class: "ss ss-" + item[3]}),
                       m("div", {class: "info"}, [
-                        m(m.route.Link, {href: "/set/" + item[3]}, [
+                        m(m.route.Link, {href: "/set/" + item[3] + "/page/1"}, [
                           m("span", item[15])
                         ]),
                         m("span", item[17]),
@@ -365,17 +394,47 @@
           ]}
       }
 
+      var allcards = {
+        view: function(vnode) {
+          return [
+            m("h1", "Browsing all cards"),
+            orderCards(),
+            pagination(vnode, "/all"),
+            m("div", {class: "cards"}, [
+              model.user_data
+                // filter out first item which is csv column names
+                .filter((item, index, arr) => arr.indexOf(item) != 0)
+                .sort(sortCard)
+                // pagination
+                .filter(function(item, index, arr) {
+                  return arr.indexOf(item) < vnode.attrs.page * model.items_per_page &&
+                         arr.indexOf(item) >= (vnode.attrs.page-1) * model.items_per_page;
+                 })
+                .map(viewCard)
+            ]),
+            pagination(vnode, "/all"),
+          ]
+        }
+      }
+
       var browse_set = {
         view: function(vnode) {
           return [
-            m("h1", "Browsing: " + model.set_data.filter(x => x[3] == vnode.attrs.set)[0][15]),
+            m("h1", "Browsing set: " + model.set_data.filter(x => x[3] == vnode.attrs.set)[0][15]),
             orderCards(),
+            pagination(vnode, "/set/" + vnode.attrs.set),
             m("div", {class: "cards"}, [
               model.user_data
                 .filter(item => item[1] == vnode.attrs.set)
                 .sort(sortCard)
+                // pagination
+                .filter(function(item, index, arr) {
+                  return arr.indexOf(item) < vnode.attrs.page * model.items_per_page &&
+                         arr.indexOf(item) >= (vnode.attrs.page-1) * model.items_per_page;
+                 })
                 .map(viewCard)
             ]),
+            pagination(vnode, "/set/" + vnode.attrs.set),
           ]
         }
       }
@@ -385,12 +444,22 @@
           return [
             m("h1", "Search Result for '" + vnode.attrs.term + "'"),
             orderCards(),
+            pagination(vnode, "/search/" + vnode.attrs.term),
             m("div", {class: "cards"}, [
               model.user_data
+                // filter out first item which is csv column names
+                .filter((item, index, arr) => arr.indexOf(item) != 0)
+                // filter out items based on search criteria
                 .filter(item => item[0].toLowerCase().indexOf(vnode.attrs.term.toLowerCase()) > -1)
                 .sort(sortCard)
+                // pagination
+                .filter(function(item, index, arr) {
+                  return arr.indexOf(item) < vnode.attrs.page * model.items_per_page &&
+                         arr.indexOf(item) >= (vnode.attrs.page-1) * model.items_per_page;
+                 })
                 .map(viewCard)
             ]),
+            pagination(vnode, "/search/" + vnode.attrs.term),
           ]
         }
       }
@@ -465,8 +534,9 @@
 
                 m.route(document.getElementById("content"), "/", {
                   "/": index,
-                  "/set/:set": browse_set,
-                  "/search/:term": search_result
+                  "/all/page/:page": allcards,
+                  "/set/:set/page/:page": browse_set,
+                  "/search/:term/page/:page": search_result
                 });
               }
             });
