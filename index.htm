@@ -57,6 +57,10 @@
         text-decoration: none;
       }
 
+      a[disabled] {
+        color: var(--col-text-main);
+      }
+
       fieldset {
         border: none;
       }
@@ -217,7 +221,6 @@
       }
     </style>
     <script>
-
       var model = {
         set_data: [],
         user_data: [],
@@ -250,91 +253,17 @@
         window.scrollTo(0,0);
       }
 
-      function viewCard(item) {
-        let img = "https://cards.scryfall.io/large/front/" + item[8][0] + "/" + item[8][1] + "/" + item[8] + ".jpg";
-
-        return m("div", {class: "card"}, [
-          m("img", {src: img}),
-          m("div", {class: "info"}, [
-            m("span", {class: "name strong"}, item[0]),
-            m("span", "Unit Price: ", [
-              m("span", {class: "strong"}, item[9] == '' ? '' : '$' + parseFloat(item[9]).toFixed(2))
-            ]),
-            m("span", "Quantity: ", [
-              m("span", {class: "strong"}, item[6])
-            ])
-          ])
-        ]);
-      }
-
-      function sortCard(a, b) {
-        if (model.cards_sort_by == "Name" && model.cards_sort_order == "Ascending")
-          return ('' + a[0]).localeCompare(b[0]);
-        if (model.cards_sort_by == "Name" && model.cards_sort_order == "Descending")
-          return ('' + b[0]).localeCompare(a[0]);
-        if (model.cards_sort_by == "Quantity" && model.cards_sort_order == "Ascending")
-          return a[6] - b[6];
-        if (model.cards_sort_by == "Quantity" && model.cards_sort_order == "Descending")
-          return b[6] - a[6];
-        if (model.cards_sort_by == "Unit Price" && model.cards_sort_order == "Ascending")
-          return a[9] - b[9];
-        if (model.cards_sort_by == "Unit Price" && model.cards_sort_order == "Descending")
-          return b[9] - a[9];
-      }
-
-      function orderCards() {
-        return m("fieldset", [
-          m("div", {class: "control-group"}, [
-            m("label", {for: "sort-by"}, "Sort By: "),
-            m("select", {id: "sort-by", onchange: function(e) {
-              model.cards_sort_by = e.target.value;
-            }}, [
-              m("option", {selected: model.cards_sort_by == "Name"}, "Name"),
-              m("option", {selected: model.cards_sort_by == "Quantity"}, "Quantity"),
-              m("option", {selected: model.cards_sort_by == "Unit Price"}, "Unit Price"),
-            ])
-          ]),
-          m("div", {class: "control-group"}, [
-            m("label", {for: "sort-order"}, "Sort Order: "),
-            m("select", {id: "sort-order", onchange: function(e) {
-              model.cards_sort_order = e.target.value;
-            }}, [
-              m("option", {selected: model.cards_sort_order == "Ascending"}, "Ascending"),
-              m("option", {selected: model.cards_sort_order == "Descending"}, "Descending")
-            ])
-          ]),
-          m("div", {class: "control-group"}, [
-            m("label", {for: "items-per-page"}, "Items per page: "),
-            m("select", {id: "items-per-page", onchange: function(e) {
-              model.items_per_page = parseInt(e.target.value);
-            }}, [
-              m("option", {selected: model.items_per_page == 10}, "10"),
-              m("option", {selected: model.items_per_page == 25}, "25"),
-              m("option", {selected: model.items_per_page == 100}, "100")
-            ])
-          ])
-        ])
-      }
-
-      function pagination(vnode, prefix) {
-        return m("div", {class: "pagination"}, [
-          m("label", "Page: "),
-          m(m.route.Link, {href: "/"}, "Home"),
-          m(m.route.Link, {href: prefix + "/page/" + (parseInt(vnode.attrs.page)-1), disabled: vnode.attrs.page == 1}, "Previous"),
-          m(m.route.Link, {href: prefix + "/page/" + (parseInt(vnode.attrs.page)+1)}, "Next")
-        ])
-      }
-
-      var index = {
+      var indexpage = {
         view: function(vnode) {
           return [
             m("h1", "Upload Manabox .csv"),
-            m("input", {type: "file", id: "csv", name: "csv", accept: "text/csv", onchange: function() {
+            m("input", {type: "file", id: "csv", name: "csv", accept: ".csv", onchange: function() {
               for (const file of event.target.files) {
                 const reader = new FileReader();
                 reader.onload = function(e) {
                   localStorage.setItem("user_data", reader.result);
                   reloadData();
+                  m.redraw();
                 };
                 reader.readAsText(file);
               }
@@ -428,76 +357,127 @@
           ]}
       }
 
-      var allcards = {
+      var cardpage = {
+        pagination: function(vnode, prefix, pages_len) {
+          let pages = [];
+          let min_page = Math.max(parseInt(vnode.attrs.page) - 10, 1);
+          let max_page = Math.min(min_page + 20, pages_len);
+          for(let i=min_page; i<= max_page; i++) {
+            pages.push(m(m.route.Link, {href: prefix + "/page/" + i, disabled: vnode.attrs.page == i}, i));
+          }
+
+          return m("div", {class: "pagination"}, [
+            m("label", "Page: "),
+            m(m.route.Link, {href: "/"}, "Home"),
+            min_page != 1 ? m(m.route.Link, {href: prefix + "/page/1"}, "First") : '',
+            m(m.route.Link, {href: prefix + "/page/" + (parseInt(vnode.attrs.page)-1), disabled: vnode.attrs.page == 1}, "Previous"),
+            pages,
+            m(m.route.Link, {href: prefix + "/page/" + (parseInt(vnode.attrs.page)+1), disabled: vnode.attrs.page == pages_len}, "Next"),
+            max_page != pages_len ? m(m.route.Link, {href: prefix + "/page/" + pages_len}, "Last") : ''
+          ]);
+        },
         view: function(vnode) {
+          let title = "Browsing all cards";
+          let page = "/all"
+          if(vnode.attrs.set) {
+            title = "Browsing set: " + model.set_data.filter(x => x[3] == vnode.attrs.set)[0][15];
+            page = "/set/" + vnode.attrs.set;
+          }
+          else if(vnode.attrs.term) {
+            title = "Search Result for '" + vnode.attrs.term + "'"
+            page = "/search/" + vnode.attrs.term;
+          }
+
+          let cards = model.user_data
+            // filter out first item which is csv column names
+            .filter((item, index, arr) => arr.indexOf(item) != 0)
+            .sort(function(a, b) {
+              if (model.cards_sort_by == "Name" && model.cards_sort_order == "Ascending")
+                return ('' + a[0]).localeCompare(b[0]);
+              if (model.cards_sort_by == "Name" && model.cards_sort_order == "Descending")
+                return ('' + b[0]).localeCompare(a[0]);
+              if (model.cards_sort_by == "Quantity" && model.cards_sort_order == "Ascending")
+                return a[6] - b[6];
+              if (model.cards_sort_by == "Quantity" && model.cards_sort_order == "Descending")
+                return b[6] - a[6];
+              if (model.cards_sort_by == "Unit Price" && model.cards_sort_order == "Ascending")
+                return a[9] - b[9];
+              if (model.cards_sort_by == "Unit Price" && model.cards_sort_order == "Descending")
+                return b[9] - a[9];
+            })
+            // filter based on which page we're on
+            .filter(function(item) {
+              if(vnode.attrs.set)
+                return item [1] == vnode.attrs.set
+              else if(vnode.attrs.term)
+                return item[0].toLowerCase().indexOf(vnode.attrs.term.toLowerCase()) > -1
+              return true;
+            });
+
+          let pages_len = Math.ceil(cards.length / model.items_per_page);
+
           return [
-            m("h1", "Browsing all cards"),
-            orderCards(),
-            pagination(vnode, "/all"),
+            m("h1", title),
+            m("fieldset", [
+              m("div", {class: "control-group"}, [
+                m("label", {for: "sort-by"}, "Sort By: "),
+                m("select", {id: "sort-by", onchange: function(e) {
+                  model.cards_sort_by = e.target.value;
+                }}, [
+                  m("option", {selected: model.cards_sort_by == "Name"}, "Name"),
+                  m("option", {selected: model.cards_sort_by == "Quantity"}, "Quantity"),
+                  m("option", {selected: model.cards_sort_by == "Unit Price"}, "Unit Price"),
+                ])
+              ]),
+              m("div", {class: "control-group"}, [
+                m("label", {for: "sort-order"}, "Sort Order: "),
+                m("select", {id: "sort-order", onchange: function(e) {
+                  model.cards_sort_order = e.target.value;
+                }}, [
+                  m("option", {selected: model.cards_sort_order == "Ascending"}, "Ascending"),
+                  m("option", {selected: model.cards_sort_order == "Descending"}, "Descending")
+                ])
+              ]),
+              m("div", {class: "control-group"}, [
+                m("label", {for: "items-per-page"}, "Items per page: "),
+                m("select", {id: "items-per-page", onchange: function(e) {
+                  model.items_per_page = parseInt(e.target.value);
+                }}, [
+                  m("option", {selected: model.items_per_page == 10}, "10"),
+                  m("option", {selected: model.items_per_page == 25}, "25"),
+                  m("option", {selected: model.items_per_page == 100}, "100")
+                ])
+              ])
+            ]),
+            this.pagination(vnode, page, pages_len),
             m("div", {class: "cards"}, [
-              model.user_data
-                // filter out first item which is csv column names
-                .filter((item, index, arr) => arr.indexOf(item) != 0)
-                .sort(sortCard)
+              cards
                 // pagination
                 .filter(function(item, index, arr) {
                   return arr.indexOf(item) < vnode.attrs.page * model.items_per_page &&
                          arr.indexOf(item) >= (vnode.attrs.page-1) * model.items_per_page;
-                 })
-                .map(viewCard)
+                })
+                .map(function(item) {
+                  let img = "https://cards.scryfall.io/normal/front/" + item[8][0] + "/" + item[8][1] + "/" + item[8] + ".jpg";
+
+                  return m("div", {class: "card"}, [
+                    m("img", {src: img}),
+                    m("div", {class: "info"}, [
+                      m("span", {class: "name strong"}, item[0]),
+                      m("span", "Unit Price: ", [
+                        m("span", {class: "strong"}, item[9] == '' ? '' : '$' + parseFloat(item[9]).toFixed(2))
+                      ]),
+                      m("span", "Quantity: ", [
+                        m("span", {class: "strong"}, item[6])
+                      ])
+                    ])
+                  ]);
+                })
             ]),
-            pagination(vnode, "/all"),
+            this.pagination(vnode, page, pages_len),
           ]
         }
       }
-
-      var browse_set = {
-        view: function(vnode) {
-          return [
-            m("h1", "Browsing set: " + model.set_data.filter(x => x[3] == vnode.attrs.set)[0][15]),
-            orderCards(),
-            pagination(vnode, "/set/" + vnode.attrs.set),
-            m("div", {class: "cards"}, [
-              model.user_data
-                .filter(item => item[1] == vnode.attrs.set)
-                .sort(sortCard)
-                // pagination
-                .filter(function(item, index, arr) {
-                  return arr.indexOf(item) < vnode.attrs.page * model.items_per_page &&
-                         arr.indexOf(item) >= (vnode.attrs.page-1) * model.items_per_page;
-                 })
-                .map(viewCard)
-            ]),
-            pagination(vnode, "/set/" + vnode.attrs.set),
-          ]
-        }
-      }
-
-      var search_result = {
-        view: function(vnode) {
-          return [
-            m("h1", "Search Result for '" + vnode.attrs.term + "'"),
-            orderCards(),
-            pagination(vnode, "/search/" + vnode.attrs.term),
-            m("div", {class: "cards"}, [
-              model.user_data
-                // filter out first item which is csv column names
-                .filter((item, index, arr) => arr.indexOf(item) != 0)
-                // filter out items based on search criteria
-                .filter(item => item[0].toLowerCase().indexOf(vnode.attrs.term.toLowerCase()) > -1)
-                .sort(sortCard)
-                // pagination
-                .filter(function(item, index, arr) {
-                  return arr.indexOf(item) < vnode.attrs.page * model.items_per_page &&
-                         arr.indexOf(item) >= (vnode.attrs.page-1) * model.items_per_page;
-                 })
-                .map(viewCard)
-            ]),
-            pagination(vnode, "/search/" + vnode.attrs.term),
-          ]
-        }
-      }
-
 
       function reloadData() {
         Papa.parse("https://mtgjson.com/api/v5/csv/sets.csv", {
@@ -505,9 +485,8 @@
           complete: function(results) {
             model.set_data = results.data;
             let ud = localStorage.getItem("user_data");
-            if (ud == null) {
-              return;
-            }
+            if (ud == null)
+              ud = "";
             Papa.parse(ud, {
               complete: function(results) {
                 model.user_data = results.data;
@@ -567,10 +546,10 @@
                 model.stats.unique_cards = [...new Set(model.user_data.map(x => x[0]))].length;
 
                 m.route(document.getElementById("content"), "/", {
-                  "/": index,
-                  "/all/page/:page": allcards,
-                  "/set/:set/page/:page": browse_set,
-                  "/search/:term/page/:page": search_result
+                  "/": indexpage,
+                  "/all/page/:page": cardpage,
+                  "/set/:set/page/:page": cardpage,
+                  "/search/:term/page/:page": cardpage
                 });
               }
             });
