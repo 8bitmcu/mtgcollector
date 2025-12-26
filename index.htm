@@ -1,7 +1,10 @@
+<!DOCTYPE html>
 <html>
   <head>
-    <script src="https://unpkg.com/mithril/mithril.js"></script>
+    <script src="https://unpkg.com/mithril/mithril.min.js"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/PapaParse/5.3.0/papaparse.min.js"></script>
+    <link rel="stylesheet" type="text/css" href="https://cdn.jsdelivr.net/npm/@phosphor-icons/web@2.1.1/src/regular/style.css" />
+    <link rel="stylesheet" type="text/css" href="https://cdn.jsdelivr.net/npm/@phosphor-icons/web@2.1.1/src/fill/style.css" />
     <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/purecss@3.0.0/build/pure-min.css" integrity="sha384-X38yfunGUhNzHpBaEBsWLO+A0HDYOQi8ufWDkZ0k9e0eXz/tH3II7uKZ9msv++Ls" crossorigin="anonymous">
     <link href="https://cdn.jsdelivr.net/npm/keyrune@latest/css/keyrune.css" rel="stylesheet" type="text/css" />
     <link href=" https://cdn.jsdelivr.net/npm/@saeris/typeface-beleren-bold@1.0.1/index.min.css " rel="stylesheet">
@@ -100,8 +103,6 @@
       footer {
         background: var(--col-bg-footer);
         color: var(--col-text-alt);
-        position: fixed;
-        bottom: 0;
         width: 100%;
         text-align: center;
       }
@@ -194,6 +195,7 @@
         flex-direction: column;
         padding: 0 15px 15px 15px;
         line-height: 1.3;
+        width: 250px;
       }
 
       .cards .card .info .name {
@@ -202,6 +204,12 @@
 
       .cards .card .strong {
         color: var(--col-text-strong);
+      }
+
+      .cards .card .pure-button {
+        padding: initial;
+        height: 1em;
+        margin: 0 0.5em;
       }
 
       .pagination {
@@ -264,8 +272,12 @@
         cards_sort_by: "Name",
         cards_sort_order: "Ascending",
         filter_rarity: "All",
-        items_per_page: 25
+        items_per_page: 40,
+        edit_mode: false
       }
+
+      var user_col = {}
+      var set_col = {}
 
       var setOrig = m.route.set;
       m.route.set = function(path, data, options) {
@@ -277,6 +289,10 @@
       m.route.link = function(vnode) {
         linkOrig(vnode);
         window.scrollTo(0,0);
+      }
+
+      function saveUserData() {
+        localStorage.setItem("user_data", Papa.unparse(model.user_data));
       }
 
       var indexpage = {
@@ -301,7 +317,7 @@
               m("h2", [
                 m("a", {href:"#", onclick: function(e) { 
                   fetch("https://raw.githubusercontent.com/8bitmcu/mtgcollector/refs/heads/main/example.csv")
-                    .then(x => x.text())
+                    .then(result => result.text())
                     .then(function(text) {
                       localStorage.setItem("user_data", text);
                       reloadData();
@@ -313,21 +329,50 @@
               m("h1", "Data"),
               m("div", {class: "stats"}, [
                 m("ul", [
-                  m("li", model.stats.card_sum + " cards loaded"),
-                  m("li", model.stats.unique_cards + " unique cards"),
-                  m("li", model.stats.unique_editions + " unique editions"),
-                  m("li", "$" + model.stats.total_worth + " total worth"),
+                  m("li", model.user_data
+                            // filter out first item which is csv column names
+                            .filter((item, index, arr) => arr.indexOf(item) != 0)
+                            // sum all quanitity column values
+                            .map(x => x[user_col.quantity])
+                            .reduce((x, y) => x + y, 0) + " cards loaded"),
+                  m("li", [...new Set(model.user_data.map(x => x[user_col.name]))].length + " unique cards"),
+                  m("li", model.set_data
+                            // filter out first item which is csv column names
+                            .filter((item, index, arr) => arr.indexOf(item) != 0)
+                            // filter out editions that we don't have
+                            .filter(item => model.user_data.map(x => x[user_col.setcode]).indexOf(item[set_col.code]) != -1)
+                            .length + " unique editions"),
+                  m("li", "$" + model.user_data
+                            // filter out first item which is csv column names
+                            .filter((item, index, arr) => arr.indexOf(item) != 0)
+                            // sum all price column values
+                            .map(x => x[user_col.purchaseprice] * x[user_col.quantity])
+                            .reduce((x, y) => x + y, 0)
+                            .toFixed(0) + " total worth")
                 ]),
-                m("ul", [
-                  m("li", model.stats.mythics + " mythics"),
-                  m("li", model.stats.rares + " rares"),
-                  m("li", model.stats.uncommons + " uncommons"),
-                  m("li", model.stats.commons + " commons")
-                ]),
+                m("ul", ["mythic", "rare", "uncommon", "common"].map(rarity => m("li", model.user_data
+                            // filter for rarity
+                            .filter(item => item[user_col.rarity] == rarity)
+                            // sum all quanitity column values
+                            .map(x => x[user_col.quantity])
+                            .reduce((x, y) => x + y, 0) + " " + rarity + "(s)"))
+                ),
                 m("ul", [
                   m("li", (JSON.stringify(localStorage).length /1024/1024).toFixed(2) + "/5MB used"),
                   m("li", [
-                    m("a", {href:"#", onclick: function(e) { if (confirm("Are you sure?")) {localStorage.clear(); reloadData()} }}, "Clear all Data")
+                    m("a", {href:"#", onclick: function(e) { 
+                      if (confirm("Are you sure?")) {
+                        localStorage.clear();
+                        reloadData();
+                      }
+                    }}, "Clear all Data")
+                  ]),
+                  m("li", [
+                    m("a", {href:"#", onclick: function(e) {
+                      let csv = Papa.unparse(model.user_data);
+                      e.target.href = window.URL.createObjectURL(new Blob([csv], {type: "text/csv"}));
+                      e.target.download = "backup_" + new Date().toLocaleDateString().replaceAll("/", "-") + ".csv";
+                    }}, "Export .csv")
                   ])
                 ])
               ]),
@@ -365,39 +410,39 @@
               ]),
               m("div", {class : "sets"}, [
                 model.set_data
-                  // filter out first item which is csv column names
-                  .filter((item, index, arr) => arr.indexOf(item) != 0)
+                  // filter out first set which is csv column names
+                  .filter((set, index, arr) => arr.indexOf(set) != 0)
                   // filter out editions that we don't have
-                  .filter(item => model.user_data.map(x => x[1]).indexOf(item[3]) != -1)
+                  .filter(set => model.user_data.map(card => card[user_col.setcode]).indexOf(set[set_col.code]) != -1)
                   // sort data
                   .sort(function(a, b) {
                     if (model.set_sort_by == "Release" && model.set_sort_order == "Ascending")
-                      return new Date(a[17]).getTime() - new Date(b[17]).getTime();
+                      return new Date(a[set_col.releasedate]).getTime() - new Date(b[set_col.releasedate]).getTime();
                     if (model.set_sort_by == "Release" && model.set_sort_order == "Descending")
-                      return new Date(b[17]).getTime() - new Date(a[17]).getTime();
+                      return new Date(b[set_col.releasedate]).getTime() - new Date(a[set_col.releasedate]).getTime();
                     if (model.set_sort_by == "Name" && model.set_sort_order == "Ascending")
-                      return ('' + a[15]).localeCompare(b[15]);
+                      return ('' + a[set_col.name]).localeCompare(b[set_col.name]);
                     if (model.set_sort_by == "Name" && model.set_sort_order == "Descending")
-                      return ('' + b[15]).localeCompare(a[15]);
+                      return ('' + b[set_col.name]).localeCompare(a[set_col.name]);
                   })
-                  .map(function(item) {
+                  .map(function(set) {
                     return m("div", {class: "set"}, [
-                      m("i", {class: "ss ss-" + item[3]}),
+                      m("i", {class: "ss ss-" + set[set_col.code].toLowerCase()}),
                       m("div", {class: "info"}, [
-                        m(m.route.Link, {href: "/set/" + item[3] + "/page/1"}, [
-                          m("span", item[15])
+                        m(m.route.Link, {href: "/set/" + set[set_col.code] + "/page/1"}, [
+                          m("span", set[set_col.name])
                         ]),
-                        m("span", item[17]),
+                        m("span", set[set_col.releasedate]),
                         m("ul", [
                           m("li", model.user_data
-                            .filter(x => x[1] == item[3])
-                            .map(x => parseInt(x[6]))
+                            .filter(card => card[user_col.setcode] == set[set_col.code])
+                            .map(card => card[user_col.quantity])
                             .reduce((x, y) => x + y) + " card(s)"
                           ),
                           m("li", "$" + model.user_data
-                            .filter(x => x[1] == item[3])
-                            .filter(x => x[9] != '')
-                            .map(x => parseFloat(x[9]) * parseInt(x[6]))
+                            .filter(card => card[user_col.setcode] == set[set_col.code])
+                            .filter(card => card[user_col.purchaseprice] != null)
+                            .map(card => card[user_col.purchaseprice] * card[user_col.quantity])
                             .reduce((x, y) => x + y, 0)
                             .toFixed(2)
                           )
@@ -430,10 +475,24 @@
           ]);
         },
         view: function(vnode) {
+          function adjustCardCount(e) {
+            let target = e.target.tagName == "I" ? e.target.parentElement : e.target;
+            let isIncremental = target.getAttribute("data-direction") == "inc";
+            let scryfallid = target.getAttribute("data-scryfallid");
+            let item = model.user_data.filter(x => x[user_col.scryfallid] == scryfallid)[0];
+            let newVal = item[user_col.quantity] + (isIncremental ? +1 : -1);
+
+            if(newVal == 0 && confirm("Are you sure?")) {
+              model.user_data.splice(model.user_data.indexOf(item), 1);
+            } else {
+              item[user_col.quantity] = newVal;
+            }
+            saveUserData();
+          }
           let title = "Browsing all cards";
           let page = "/all"
           if(vnode.attrs.set) {
-            title = "Browsing set: " + model.set_data.filter(x => x[3] == vnode.attrs.set)[0][15];
+            title = "Browsing set: " + model.set_data.filter(x => x[set_col.code] == vnode.attrs.set)[0][set_col.name];
             page = "/set/" + vnode.attrs.set;
           }
           else if(vnode.attrs.term) {
@@ -442,35 +501,37 @@
           }
 
           let cards = model.user_data
-            // filter out first item which is csv column names
-            .filter((item, index, arr) => arr.indexOf(item) != 0)
+            // filter out first card which is csv column names
+            .filter((card, index, arr) => arr.indexOf(card) != 0)
             // rarity filter
-            .filter(function(item) {
+            .filter(function(card) {
               if(model.filter_rarity == "All")
                 return true;
-              return item[5] == model.filter_rarity.toLowerCase();
+              return card[user_col.rarity] == model.filter_rarity.toLowerCase();
             })
             .sort(function(a, b) {
               if (model.cards_sort_by == "Name" && model.cards_sort_order == "Ascending")
-                return ('' + a[0]).localeCompare(b[0]);
+                return ('' + a[user_col.name]).localeCompare(b[user_col.name]);
               if (model.cards_sort_by == "Name" && model.cards_sort_order == "Descending")
-                return ('' + b[0]).localeCompare(a[0]);
+                return ('' + b[user_col.name]).localeCompare(a[user_col.name]);
               if (model.cards_sort_by == "Quantity" && model.cards_sort_order == "Ascending")
-                return a[6] - b[6];
+                return a[user_col.quantity] - b[user_col.quantity];
               if (model.cards_sort_by == "Quantity" && model.cards_sort_order == "Descending")
-                return b[6] - a[6];
+                return b[user_col.quantity] - a[user_col.quantity];
               if (model.cards_sort_by == "Unit Price" && model.cards_sort_order == "Ascending")
-                return a[9] - b[9];
+                return a[user_col.purchaseprice] - b[user_col.purchaseprice];
               if (model.cards_sort_by == "Unit Price" && model.cards_sort_order == "Descending")
-                return b[9] - a[9];
+                return b[user_col.purchaseprice] - a[user_col.purchaseprice];
             })
             // filter based on which page we're on
-            .filter(function(item) {
+            .filter(function(card) {
               if (vnode.attrs.set)
-                return item[1] == vnode.attrs.set
+                return card[user_col.setcode] == vnode.attrs.set
               else if(vnode.attrs.term) {
-                for(const t of vnode.attrs.term.split("\n")) {
-                  if(item[0].toLowerCase().indexOf(t.toLowerCase()) > -1)
+                for(const term of vnode.attrs.term.split("\n")) {
+                  if(term == '')
+                    continue;
+                  if(card[user_col.name].toLowerCase().indexOf(term.toLowerCase()) > -1)
                     return true;
                 }
                 return false;
@@ -519,32 +580,45 @@
                 m("select", {id: "items-per-page", onchange: function(e) {
                   model.items_per_page = parseInt(e.target.value);
                 }}, [
-                  m("option", {selected: model.items_per_page == 10}, "10"),
-                  m("option", {selected: model.items_per_page == 25}, "25"),
-                  m("option", {selected: model.items_per_page == 100}, "100")
+                  m("option", {selected: model.items_per_page == 40}, "40"),
+                  m("option", {selected: model.items_per_page == 80}, "80"),
+                  m("option", {selected: model.items_per_page == 120}, "120")
                 ])
+              ]),
+              m("div", {class: "control-group"}, [
+                m("label", {for: "edit-mode"}, "Edit Mode: "),
+                m("input", {type: "checkbox", id: "edit-mode", onchange: function(e) {
+                  model.edit_mode = e.target.checked;
+                }})
               ])
             ]),
             this.pagination(vnode, page, pages_len),
             m("div", {class: "cards"}, [
               cards
                 // pagination
-                .filter(function(item, index, arr) {
-                  return arr.indexOf(item) < vnode.attrs.page * model.items_per_page &&
-                         arr.indexOf(item) >= (vnode.attrs.page-1) * model.items_per_page;
+                .filter(function(card, index, arr) {
+                  return arr.indexOf(card) < vnode.attrs.page * model.items_per_page &&
+                         arr.indexOf(card) >= (vnode.attrs.page-1) * model.items_per_page;
                 })
-                .map(function(item) {
-                  let img = "https://cards.scryfall.io/normal/front/" + item[8][0] + "/" + item[8][1] + "/" + item[8] + ".jpg";
+                .map(function(card) {
+                  let scryfallid = card[user_col.scryfallid];
+                  let img = "https://cards.scryfall.io/normal/front/" + scryfallid[0] + "/" + scryfallid[1] + "/" + scryfallid + ".jpg";
 
                   return m("div", {class: "card"}, [
                     m("img", {src: img}),
                     m("div", {class: "info"}, [
-                      m("span", {class: "name strong"}, item[0]),
+                      m("span", {class: "name strong"}, card[user_col.name]),
                       m("span", "Unit Price: ", [
-                        m("span", {class: "strong"}, item[9] == '' ? '' : '$' + parseFloat(item[9]).toFixed(2))
+                        m("span", {class: "strong"}, card[user_col.purchaseprice] == null ? 'N/A' : '$' + card[user_col.purchaseprice].toFixed(2))
                       ]),
                       m("span", "Quantity: ", [
-                        m("span", {class: "strong"}, item[6])
+                        !model.edit_mode ? '' : m("button", {class: "pure-button", onclick: adjustCardCount, "data-scryfallid": scryfallid, "data-direction": "dec"}, [
+                          m("i", {class: "ph ph-minus"})
+                        ]),
+                        m("span", {class: "strong"}, card[user_col.quantity]),
+                        !model.edit_mode ? '' : m("button", {class: "pure-button", onclick: adjustCardCount, "data-scryfallid": scryfallid, "data-direction": "inc"}, [
+                          m("i", {class: "ph ph-plus"})
+                        ])
                       ])
                     ])
                   ]);
@@ -561,66 +635,49 @@
           download: true,
           complete: function(results) {
             model.set_data = results.data;
+
+            set_col.basesetsize = model.set_data[0].indexOf("baseSetSize");
+            set_col.block = model.set_data[0].indexOf("block");
+            set_col.cardspheresetid = model.set_data[0].indexOf("cardsphereSetId");
+            set_col.code = model.set_data[0].indexOf("code");
+            set_col.isfoilonly = model.set_data[0].indexOf("isFoilOnly");
+            set_col.isnonfoilonly = model.set_data[0].indexOf("isNonFoilOnly");
+            set_col.isonlineonly = model.set_data[0].indexOf("isOnlineOnly");
+            set_col.ispartialpreview = model.set_data[0].indexOf("isPartialPreview");
+            set_col.keyrunecode = model.set_data[0].indexOf("keyruneCode");
+            set_col.languages = model.set_data[0].indexOf("languages");
+            set_col.mcmid = model.set_data[0].indexOf("mcmId");
+            set_col.mcmidextras = model.set_data[0].indexOf("mcmIdExtras");
+            set_col.mcmname = model.set_data[0].indexOf("mcmName");
+            set_col.mtgocode = model.set_data[0].indexOf("mtgoCode");
+            set_col.name = model.set_data[0].indexOf("name");
+            set_col.parentcode = model.set_data[0].indexOf("parentCode");
+            set_col.releasedate = model.set_data[0].indexOf("releaseDate");
+            set_col.tcgplayergroupid = model.set_data[0].indexOf("tcgplayerGroupId");
+
             let ud = localStorage.getItem("user_data");
             if (ud == null)
               ud = "";
             Papa.parse(ud, {
+              dynamicTyping: true,
               complete: function(results) {
                 model.user_data = results.data;
 
-                model.stats.card_sum = model.user_data
-                  // filter out first item which is csv column names
-                  .filter((item, index, arr) => arr.indexOf(item) != 0)
-                  // sum all quanitity column values
-                  .map(x => parseInt(x[6]))
-                  .reduce((x, y) => x + y, 0)
-
-                model.stats.total_worth = model.user_data
-                  // filter out first item which is csv column names
-                  .filter((item, index, arr) => arr.indexOf(item) != 0)
-                  // filter out empty prices
-                  .filter(item => item[9] != '')
-                  // sum all price column values
-                  .map(x => parseFloat(x[9]) * parseInt(x[6]))
-                  .reduce((x, y) => x + y, 0)
-                  .toFixed(0)
-
-                model.stats.mythics = model.user_data
-                  // filter for rarity
-                  .filter(item => item[5] == "mythic")
-                  // sum all quanitity column values
-                  .map(x => parseInt(x[6]))
-                  .reduce((x, y) => x + y, 0)
-
-                model.stats.rares = model.user_data
-                  // filter for rarity
-                  .filter(item => item[5] == "rare")
-                  // sum all quanitity column values
-                  .map(x => parseInt(x[6]))
-                  .reduce((x, y) => x + y, 0)
-
-                model.stats.uncommons = model.user_data
-                  // filter for rarity
-                  .filter(item => item[5] == "uncommon")
-                  // sum all quanitity column values
-                  .map(x => parseInt(x[6]))
-                  .reduce((x, y) => x + y, 0)
-
-                model.stats.commons = model.user_data
-                  // filter for rarity
-                  .filter(item => item[5] == "common")
-                  // sum all quanitity column values
-                  .map(x => parseInt(x[6]))
-                  .reduce((x, y) => x + y, 0)
-
-                model.stats.unique_editions = model.set_data
-                  // filter out first item which is csv column names
-                  .filter((item, index, arr) => arr.indexOf(item) != 0)
-                  // filter out editions that we don't have
-                  .filter(item => model.user_data.map(x => x[1]).indexOf(item[3]) != -1)
-                  .length;
-
-                model.stats.unique_cards = [...new Set(model.user_data.map(x => x[0]))].length;
+                user_col.name = model.user_data[0].indexOf("Name");
+                user_col.setcode = model.user_data[0].indexOf("Set code");
+                user_col.setname = model.user_data[0].indexOf("Set name");
+                user_col.collector = model.user_data[0].indexOf("Collector number");
+                user_col.foil = model.user_data[0].indexOf("Foil");
+                user_col.rarity = model.user_data[0].indexOf("Rarity");
+                user_col.quantity = model.user_data[0].indexOf("Quantity");
+                user_col.manaboxid = model.user_data[0].indexOf("ManaBox ID");
+                user_col.scryfallid = model.user_data[0].indexOf("Scryfall ID");
+                user_col.purchaseprice = model.user_data[0].indexOf("Purchase price");
+                user_col.misprint = model.user_data[0].indexOf("Misprint");
+                user_col.altered = model.user_data[0].indexOf("Altered");
+                user_col.condition = model.user_data[0].indexOf("Condition");
+                user_col.language = model.user_data[0].indexOf("Language");
+                user_col.purchasecur = model.user_data[0].indexOf("Purchase price currency");
 
                 m.route(document.getElementById("content"), "/", {
                   "/": indexpage,
@@ -642,9 +699,9 @@
       <h1>MTGCollector</h1>
     </header>
     <main>
-        <div id="content">
-        </div>
-        <footer> (C) 2025 8bitmcu</footer>
+      <div id="content">
+      </div>
+      <footer> (C) 2025 8bitmcu</footer>
     </main>
   </body>
 </html>
