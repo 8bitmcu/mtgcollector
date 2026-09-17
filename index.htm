@@ -661,23 +661,25 @@
             Papa.parse(ud, {
               dynamicTyping: true,
               complete: function(results) {
-                model.user_data = results.data;
+                if (!results.errors.length) {
+                  model.user_data = results.data;
 
-                user_col.name = model.user_data[0].indexOf("Name");
-                user_col.setcode = model.user_data[0].indexOf("Set code");
-                user_col.setname = model.user_data[0].indexOf("Set name");
-                user_col.collector = model.user_data[0].indexOf("Collector number");
-                user_col.foil = model.user_data[0].indexOf("Foil");
-                user_col.rarity = model.user_data[0].indexOf("Rarity");
-                user_col.quantity = model.user_data[0].indexOf("Quantity");
-                user_col.manaboxid = model.user_data[0].indexOf("ManaBox ID");
-                user_col.scryfallid = model.user_data[0].indexOf("Scryfall ID");
-                user_col.purchaseprice = model.user_data[0].indexOf("Purchase price");
-                user_col.misprint = model.user_data[0].indexOf("Misprint");
-                user_col.altered = model.user_data[0].indexOf("Altered");
-                user_col.condition = model.user_data[0].indexOf("Condition");
-                user_col.language = model.user_data[0].indexOf("Language");
-                user_col.purchasecur = model.user_data[0].indexOf("Purchase price currency");
+                  user_col.name = model.user_data[0].indexOf("Name");
+                  user_col.setcode = model.user_data[0].indexOf("Set code");
+                  user_col.setname = model.user_data[0].indexOf("Set name");
+                  user_col.collector = model.user_data[0].indexOf("Collector number");
+                  user_col.foil = model.user_data[0].indexOf("Foil");
+                  user_col.rarity = model.user_data[0].indexOf("Rarity");
+                  user_col.quantity = model.user_data[0].indexOf("Quantity");
+                  user_col.manaboxid = model.user_data[0].indexOf("ManaBox ID");
+                  user_col.scryfallid = model.user_data[0].indexOf("Scryfall ID");
+                  user_col.purchaseprice = model.user_data[0].indexOf("Purchase price");
+                  user_col.misprint = model.user_data[0].indexOf("Misprint");
+                  user_col.altered = model.user_data[0].indexOf("Altered");
+                  user_col.condition = model.user_data[0].indexOf("Condition");
+                  user_col.language = model.user_data[0].indexOf("Language");
+                  user_col.purchasecur = model.user_data[0].indexOf("Purchase price currency");
+                }
 
                 m.route(document.getElementById("content"), "/", {
                   "/": indexpage,
