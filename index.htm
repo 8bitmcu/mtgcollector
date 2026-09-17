@@ -334,7 +334,7 @@
                             .filter((item, index, arr) => arr.indexOf(item) != 0)
                             // sum all quanitity column values
                             .map(x => x[user_col.quantity])
-                            .reduce((x, y) => x + y, 0) + " cards loaded"),
+                            .reduce((x, y) => x + (Number(y) || 0), 0) + " cards loaded"),
                   m("li", [...new Set(model.user_data.map(x => x[user_col.name]))].length + " unique cards"),
                   m("li", model.set_data
                             // filter out first item which is csv column names
@@ -346,7 +346,7 @@
                             // filter out first item which is csv column names
                             .filter((item, index, arr) => arr.indexOf(item) != 0)
                             // sum all price column values
-                            .map(x => x[user_col.purchaseprice] * x[user_col.quantity])
+                            .map(x => (parseFloat(x[user_col.purchaseprice]) || 0) * (parseInt(x[user_col.quantity], 10) || 0))
                             .reduce((x, y) => x + y, 0)
                             .toFixed(0) + " total worth")
                 ]),
