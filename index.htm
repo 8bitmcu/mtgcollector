@@ -387,6 +387,9 @@
               m("h1", [
                 m(m.route.Link, {href: "/all/page/1"}, "Browse All Cards")
               ]),
+              m("h1", [
+                m(m.route.Link, {href: "/duplicates/page/1"}, "Duplicates Finder")
+              ]),
               m("h1", "Browse Sets"),
               m("fieldset", [
                 m("div", {class: "control-group"}, [
@@ -630,6 +633,150 @@
         }
       }
 
+      var duplicatespage = {
+        minQty: 5, // Default threshold set to 5
+        pagination: cardpage.pagination,
+        view: function(vnode) {
+          let self = this;
+
+          // Helper function to handle + / - quantity updates
+          function adjustCardCount(e) {
+            let target = e.target.tagName == "I" ? e.target.parentElement : e.target;
+            let isIncremental = target.getAttribute("data-direction") == "inc";
+            let scryfallid = target.getAttribute("data-scryfallid");
+            let item = model.user_data.filter(x => x[user_col.scryfallid] == scryfallid)[0];
+            let newVal = item[user_col.quantity] + (isIncremental ? +1 : -1);
+
+            if (newVal == 0 && confirm("Are you sure?")) {
+              model.user_data.splice(model.user_data.indexOf(item), 1);
+            } else if (newVal > 0) {
+              item[user_col.quantity] = newVal;
+            }
+            saveUserData();
+          }
+
+          // 1. Group cards by normalized name
+          let grouped = {};
+          model.user_data
+            .filter((card, index, arr) => arr.indexOf(card) != 0) // skip CSV header
+            .forEach(card => {
+              let name = card[user_col.name];
+              if (!name) return;
+              let key = name.trim().toLowerCase();
+              if (!grouped[key]) {
+                grouped[key] = { name: name, cards: [], totalQty: 0 };
+              }
+              grouped[key].cards.push(card);
+              grouped[key].totalQty += (parseInt(card[user_col.quantity], 10) || 0);
+            });
+
+          // 2. Filter groups where the combined total quantity meets or exceeds the threshold
+          let duplicateGroups = Object.values(grouped).filter(group => 
+            group.totalQty >= self.minQty
+          );
+
+          // 3. Sort duplicate groups alphabetically
+          duplicateGroups.sort((a, b) => a.name.localeCompare(b.name));
+
+          // 4. Paginate the grouped results
+          let page = parseInt(vnode.attrs.page) || 1;
+          let pages_len = Math.ceil(duplicateGroups.length / model.items_per_page);
+          let paginatedGroups = duplicateGroups.slice(
+            (page - 1) * model.items_per_page, 
+            page * model.items_per_page
+          );
+
+          return [
+            m("h1", `Duplicate Cards (${duplicateGroups.length} unique titles with ≥ ${self.minQty} copies)`),
+            m("fieldset", [
+              m("div", {class: "control-group"}, [
+                m("label", {for: "min-qty"}, "Minimum Quantity: "),
+                m("input", {
+                  type: "number",
+                  id: "min-qty",
+                  min: "1",
+                  style: "width: 70px; padding: 0.2em 0.5em;",
+                  value: self.minQty,
+                  oninput: function(e) {
+                    let val = parseInt(e.target.value, 10);
+                    self.minQty = isNaN(val) || val < 1 ? 1 : val;
+                    m.route.set("/duplicates/page/1"); // reset to page 1 on filter change
+                  }
+                })
+              ]),
+              m("div", {class: "control-group"}, [
+                m("label", {for: "items-per-page"}, "Items per page: "),
+                m("select", {id: "items-per-page", onchange: function(e) {
+                  model.items_per_page = parseInt(e.target.value, 10);
+                }}, [
+                  m("option", {selected: model.items_per_page == 40}, "40"),
+                  m("option", {selected: model.items_per_page == 80}, "80"),
+                  m("option", {selected: model.items_per_page == 120}, "120")
+                ])
+              ]),
+              m("div", {class: "control-group"}, [
+                m("label", {for: "edit-mode"}, "Edit Mode: "),
+                m("input", {
+                  type: "checkbox", 
+                  id: "edit-mode", 
+                  checked: model.edit_mode,
+                  onchange: function(e) {
+                    model.edit_mode = e.target.checked;
+                  }
+                })
+              ])
+            ]),
+            this.pagination(vnode, "/duplicates", pages_len),
+
+            // Render grouped duplicates
+            paginatedGroups.map(group => {
+              return m("div", {style: {margin: "2em 0", padding: "1em", background: "var(--col-bg-alt)", borderRadius: "15px"}}, [
+                m("h2", {style: {margin: "0 0 0.5em 0"}}, `${group.name} (Total Copies: ${group.totalQty})`),
+                m("div", {class: "cards"}, group.cards.map(card => {
+                  let scryfallid = card[user_col.scryfallid];
+                  let img = scryfallid ? "https://cards.scryfall.io/normal/front/" + scryfallid[0] + "/" + scryfallid[1] + "/" + scryfallid + ".jpg" : "";
+
+                  return m("div", {class: "card"}, [
+                    m("img", {src: img}),
+                    m("div", {class: "info"}, [
+                      m("span", {class: "name strong"}, card[user_col.name]),
+                      m("span", "Set: ", [
+                        m("span", {class: "strong"}, card[user_col.setname] || card[user_col.setcode])
+                      ]),
+                      m("span", "Unit Price: ", [
+                        m("span", {class: "strong"}, card[user_col.purchaseprice] == null ? 'N/A' : '$' + (parseFloat(card[user_col.purchaseprice]) || 0).toFixed(2))
+                      ]),
+                      m("span", "Quantity: ", [
+                        !model.edit_mode ? '' : m("button", {
+                          class: "pure-button", 
+                          onclick: adjustCardCount, 
+                          "data-scryfallid": scryfallid, 
+                          "data-direction": "dec"
+                        }, [
+                          m("i", {class: "ph ph-minus"})
+                        ]),
+                        m("span", {class: "strong"}, card[user_col.quantity]),
+                        !model.edit_mode ? '' : m("button", {
+                          class: "pure-button", 
+                          onclick: adjustCardCount, 
+                          "data-scryfallid": scryfallid, 
+                          "data-direction": "inc"
+                        }, [
+                          m("i", {class: "ph ph-plus"})
+                        ])
+                      ])
+                    ])
+                  ]);
+                }))
+              ]);
+            }),
+
+            duplicateGroups.length > 0 ? '' : m("span", {class: "no-result"}, "No duplicates found matching criteria!"),
+            this.pagination(vnode, "/duplicates", pages_len)
+          ];
+        }
+      };
+
       function reloadData() {
         Papa.parse("https://mtgjson.com/api/v5/csv/sets.csv", {
           download: true,
@@ -685,7 +832,8 @@
                   "/": indexpage,
                   "/all/page/:page": cardpage,
                   "/set/:set/page/:page": cardpage,
-                  "/search/:term/page/:page": cardpage
+                  "/search/:term/page/:page": cardpage,
+                  "/duplicates/page/:page": duplicatespage
                 });
               }
             });
