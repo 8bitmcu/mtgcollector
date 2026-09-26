@@ -634,7 +634,8 @@
       }
 
       var duplicatespage = {
-        minQty: 5, // Default threshold set to 5
+        minQty: 5,        // Overall total quantity across all editions (default 5)
+        maxPerEdition: 2, // Trigger filter if ANY single edition exceeds this quantity (default 2)
         pagination: cardpage.pagination,
         view: function(vnode) {
           let self = this;
@@ -655,7 +656,15 @@
             saveUserData();
           }
 
-          // 1. Group cards by normalized name
+          // Map set codes to release dates for fast sorting lookup
+          let setReleaseMap = {};
+          model.set_data.forEach(s => {
+            if (s[set_col.code] && s[set_col.releasedate]) {
+              setReleaseMap[s[set_col.code]] = s[set_col.releasedate];
+            }
+          });
+
+          // Group cards by normalized name
           let grouped = {};
           model.user_data
             .filter((card, index, arr) => arr.indexOf(card) != 0) // skip CSV header
@@ -664,21 +673,44 @@
               if (!name) return;
               let key = name.trim().toLowerCase();
               if (!grouped[key]) {
-                grouped[key] = { name: name, cards: [], totalQty: 0 };
+                grouped[key] = { name: name, cards: [], totalQty: 0, setCodes: new Set(), maxSingleQty: 0 };
               }
+              let qty = (parseInt(card[user_col.quantity], 10) || 0);
               grouped[key].cards.push(card);
-              grouped[key].totalQty += (parseInt(card[user_col.quantity], 10) || 0);
+              grouped[key].totalQty += qty;
+              if (qty > grouped[key].maxSingleQty) {
+                grouped[key].maxSingleQty = qty;
+              }
+              if (card[user_col.setcode]) {
+                grouped[key].setCodes.add(card[user_col.setcode]);
+              }
             });
 
-          // 2. Filter groups where the combined total quantity meets or exceeds the threshold
+          // Filter logic:
           let duplicateGroups = Object.values(grouped).filter(group => 
-            group.totalQty >= self.minQty
+            group.totalQty >= self.minQty && group.maxSingleQty > self.maxPerEdition
           );
 
-          // 3. Sort duplicate groups alphabetically
-          duplicateGroups.sort((a, b) => a.name.localeCompare(b.name));
+          // Sort individual cards WITHIN each group by release date (oldest to newest)
+          duplicateGroups.forEach(group => {
+            group.cards.sort((a, b) => {
+              let dateA = setReleaseMap[a[user_col.setcode]] || "0000-00-00";
+              let dateB = setReleaseMap[b[user_col.setcode]] || "0000-00-00";
+              return new Date(dateA) - new Date(dateB);
+            });
+            // Track the earliest edition release date for the entire group
+            let firstCardSet = group.cards[0] ? group.cards[0][user_col.setcode] : null;
+            group.earliestReleaseDate = setReleaseMap[firstCardSet] || "0000-00-00";
+          });
 
-          // 4. Paginate the grouped results
+          // Sort the GROUPS themselves chronologically by their earliest release date
+          duplicateGroups.sort((a, b) => {
+            let diff = new Date(a.earliestReleaseDate) - new Date(b.earliestReleaseDate);
+            // Fallback to alphabetical sorting if dates are identical
+            return diff !== 0 ? diff : a.name.localeCompare(b.name);
+          });
+
+          // Paginate the grouped results
           let page = parseInt(vnode.attrs.page) || 1;
           let pages_len = Math.ceil(duplicateGroups.length / model.items_per_page);
           let paginatedGroups = duplicateGroups.slice(
@@ -687,10 +719,10 @@
           );
 
           return [
-            m("h1", `Duplicate Cards (${duplicateGroups.length} unique titles with ≥ ${self.minQty} copies)`),
+            m("h1", `Duplicate Cards (${duplicateGroups.length} unique titles with total ≥ ${self.minQty} & single set > ${self.maxPerEdition})`),
             m("fieldset", [
               m("div", {class: "control-group"}, [
-                m("label", {for: "min-qty"}, "Minimum Quantity: "),
+                m("label", {for: "min-qty"}, "Minimum Total Quantity: "),
                 m("input", {
                   type: "number",
                   id: "min-qty",
@@ -700,7 +732,22 @@
                   oninput: function(e) {
                     let val = parseInt(e.target.value, 10);
                     self.minQty = isNaN(val) || val < 1 ? 1 : val;
-                    m.route.set("/duplicates/page/1"); // reset to page 1 on filter change
+                    m.route.set("/duplicates/page/1");
+                  }
+                })
+              ]),
+              m("div", {class: "control-group"}, [
+                m("label", {for: "max-per-edition"}, "Max Allowed Per Edition: "),
+                m("input", {
+                  type: "number",
+                  id: "max-per-edition",
+                  min: "0",
+                  style: "width: 70px; padding: 0.2em 0.5em;",
+                  value: self.maxPerEdition,
+                  oninput: function(e) {
+                    let val = parseInt(e.target.value, 10);
+                    self.maxPerEdition = isNaN(val) || val < 0 ? 0 : val;
+                    m.route.set("/duplicates/page/1");
                   }
                 })
               ]),
@@ -731,7 +778,7 @@
             // Render grouped duplicates
             paginatedGroups.map(group => {
               return m("div", {style: {margin: "2em 0", padding: "1em", background: "var(--col-bg-alt)", borderRadius: "15px"}}, [
-                m("h2", {style: {margin: "0 0 0.5em 0"}}, `${group.name} (Total Copies: ${group.totalQty})`),
+                m("h2", {style: {margin: "0 0 0.5em 0"}}, `${group.name} (Total Copies: ${group.totalQty}, Editions: ${group.setCodes.size})`),
                 m("div", {class: "cards"}, group.cards.map(card => {
                   let scryfallid = card[user_col.scryfallid];
                   let img = scryfallid ? "https://cards.scryfall.io/normal/front/" + scryfallid[0] + "/" + scryfallid[1] + "/" + scryfallid + ".jpg" : "";
@@ -803,29 +850,62 @@
             set_col.tcgplayergroupid = model.set_data[0].indexOf("tcgplayerGroupId");
 
             let ud = localStorage.getItem("user_data");
-            if (ud == null)
-              ud = "";
+            if (ud == null) ud = "";
+            
             Papa.parse(ud, {
               dynamicTyping: true,
               complete: function(results) {
-                if (!results.errors.length) {
-                  model.user_data = results.data;
+                if (!results.errors.length && results.data.length > 0) {
+                  let rawData = results.data;
+                  let header = rawData[0];
 
-                  user_col.name = model.user_data[0].indexOf("Name");
-                  user_col.setcode = model.user_data[0].indexOf("Set code");
-                  user_col.setname = model.user_data[0].indexOf("Set name");
-                  user_col.collector = model.user_data[0].indexOf("Collector number");
-                  user_col.foil = model.user_data[0].indexOf("Foil");
-                  user_col.rarity = model.user_data[0].indexOf("Rarity");
-                  user_col.quantity = model.user_data[0].indexOf("Quantity");
-                  user_col.manaboxid = model.user_data[0].indexOf("ManaBox ID");
-                  user_col.scryfallid = model.user_data[0].indexOf("Scryfall ID");
-                  user_col.purchaseprice = model.user_data[0].indexOf("Purchase price");
-                  user_col.misprint = model.user_data[0].indexOf("Misprint");
-                  user_col.altered = model.user_data[0].indexOf("Altered");
-                  user_col.condition = model.user_data[0].indexOf("Condition");
-                  user_col.language = model.user_data[0].indexOf("Language");
-                  user_col.purchasecur = model.user_data[0].indexOf("Purchase price currency");
+                  user_col.name = header.indexOf("Name");
+                  user_col.setcode = header.indexOf("Set code");
+                  user_col.setname = header.indexOf("Set name");
+                  user_col.collector = header.indexOf("Collector number");
+                  user_col.foil = header.indexOf("Foil");
+                  user_col.rarity = header.indexOf("Rarity");
+                  user_col.quantity = header.indexOf("Quantity");
+                  user_col.manaboxid = header.indexOf("ManaBox ID");
+                  user_col.scryfallid = header.indexOf("Scryfall ID");
+                  user_col.purchaseprice = header.indexOf("Purchase price");
+                  user_col.misprint = header.indexOf("Misprint");
+                  user_col.altered = header.indexOf("Altered");
+                  user_col.condition = header.indexOf("Condition");
+                  user_col.language = header.indexOf("Language");
+                  user_col.purchasecur = header.indexOf("Purchase price currency");
+
+                  // Deduplication & Row Merging
+                  let mergedRows = {};
+
+                  rawData.slice(1).forEach(row => {
+                    if (!row || !row[user_col.name]) return;
+
+                    let cardKey = row[user_col.scryfallid] 
+                      ? row[user_col.scryfallid] 
+                      : `${row[user_col.name]}_${row[user_col.setcode]}_${row[user_col.collector]}_${row[user_col.foil]}`;
+
+                    let currentQty = parseInt(row[user_col.quantity], 10) || 0;
+                    let currentPrice = parseFloat(row[user_col.purchaseprice]);
+                    if (isNaN(currentPrice)) currentPrice = null;
+
+                    if (!mergedRows[cardKey]) {
+                      mergedRows[cardKey] = [...row];
+                      mergedRows[cardKey][user_col.quantity] = currentQty;
+                      mergedRows[cardKey][user_col.purchaseprice] = currentPrice;
+                    } else {
+                      let existing = mergedRows[cardKey];
+                      existing[user_col.quantity] += currentQty;
+
+                      let existingPrice = existing[user_col.purchaseprice];
+                      if (existingPrice === null || (currentPrice !== null && currentPrice > existingPrice)) {
+                        existing[user_col.purchaseprice] = currentPrice;
+                      }
+                    }
+                  });
+
+                  // Reconstruct array maintaining headers at index 0
+                  model.user_data = [header, ...Object.values(mergedRows)];
                 }
 
                 m.route(document.getElementById("content"), "/", {
@@ -851,7 +931,7 @@
     <main>
       <div id="content">
       </div>
-      <footer> (C) 2025 8bitmcu</footer>
+      <footer> (C) 2025-2026 8bitmcu</footer>
     </main>
   </body>
 </html>
